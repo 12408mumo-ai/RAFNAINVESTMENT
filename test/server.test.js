@@ -1,0 +1,22 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+const base=process.env.TEST_URL||'http://localhost:3000';
+test('owner authentication and product lifecycle',async()=>{
+ let res=await fetch(base+'/api/session');assert.equal((await res.json()).authenticated,false);
+ res=await fetch(base+'/api/products',{method:'POST'});assert.equal(res.status,401);
+ res=await fetch(base+'/api/products/nope',{method:'DELETE'});assert.equal(res.status,401);
+ res=await fetch(base+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:'incorrect'})});assert.equal(res.status,401);
+ res=await fetch(base+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:process.env.ADMIN_PASSWORD||'Rafna2026!'})});assert.equal(res.status,200);
+ const cookie=res.headers.get('set-cookie').split(';')[0];assert.match(res.headers.get('set-cookie'),/HttpOnly/);
+ res=await fetch(base+'/api/session',{headers:{cookie}});assert.equal((await res.json()).authenticated,true);
+ const form=new FormData();form.set('title','Temporary test pillow');form.set('category','Beddings');form.set('price','1500');form.set('description','Temporary upload test');
+ const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=','base64');form.set('image',new Blob([png],{type:'image/png'}),'test.png');
+ res=await fetch(base+'/api/products',{method:'POST',headers:{cookie},body:form});const product=await res.json();assert.equal(res.status,201,JSON.stringify(product));assert.ok(product.image_url);
+ res=await fetch(new URL(product.image_url,base));assert.equal(res.status,200);
+ res=await fetch(base+'/api/products');assert.ok((await res.json()).some(p=>p.id===product.id));
+ res=await fetch(base+'/api/products/'+product.id,{method:'DELETE',headers:{cookie}});assert.equal(res.status,200);
+ res=await fetch(base+'/api/products');assert.ok(!(await res.json()).some(p=>p.id===product.id));
+ res=await fetch(base+'/api/products',{method:'POST',headers:{cookie},body:new FormData()});assert.equal(res.status,400);
+ res=await fetch(base+'/api/logout',{method:'POST',headers:{cookie}});assert.equal(res.status,200);
+ res=await fetch(base+'/api/session',{headers:{cookie}});assert.equal((await res.json()).authenticated,false);
+});
